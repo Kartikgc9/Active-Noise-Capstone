@@ -1,9 +1,9 @@
 """
-Effective Audio Denoiser - Actually Removes Background Noise
-==========================================================
+Enhanced Effective Audio Denoiser - Multiple Noise Reduction Levels
+==================================================================
 
-This version implements proven noise reduction techniques that work
-even without a fully trained neural network.
+This version implements proven noise reduction techniques with adjustable
+aggressiveness levels for stronger background noise removal.
 """
 
 import torch
@@ -20,14 +20,56 @@ warnings.filterwarnings("ignore")
 
 class EffectiveAudioDenoiser:
     """
-    Audio denoiser that combines multiple techniques for actual noise reduction
+    Base audio denoiser that combines multiple techniques for actual noise reduction
     """
     
-    def __init__(self, model_path=None):
+    def __init__(self, model_path=None, noise_reduction_level="normal"):
         self.sr = 44100
         self.n_fft = 2048
         self.hop_length = 512
         self.win_length = 2048
+        
+        # Define noise reduction presets
+        self.presets = {
+            "gentle": {
+                "alpha": 2.0,           # Spectral subtraction factor
+                "beta": 0.05,           # Spectral floor
+                "speech_boost": 1.1,    # Speech frequency boost
+                "wiener_weight": 0.3,   # Wiener filter contribution
+                "noise_percentile": 20  # Noise estimation percentile
+            },
+            "normal": {
+                "alpha": 2.5,
+                "beta": 0.01,
+                "speech_boost": 1.2,
+                "wiener_weight": 0.3,
+                "noise_percentile": 20
+            },
+            "moderate": {
+                "alpha": 3.0,
+                "beta": 0.008,
+                "speech_boost": 1.3,
+                "wiener_weight": 0.4,
+                "noise_percentile": 15
+            },
+            "aggressive": {
+                "alpha": 3.5,           # More aggressive subtraction
+                "beta": 0.005,          # Lower noise floor
+                "speech_boost": 1.4,    # Stronger speech enhancement
+                "wiener_weight": 0.5,   # More Wiener filtering
+                "noise_percentile": 10  # More aggressive noise detection
+            },
+            "maximum": {
+                "alpha": 4.0,           # Maximum subtraction
+                "beta": 0.003,          # Minimal noise floor
+                "speech_boost": 1.5,    # Maximum speech boost
+                "wiener_weight": 0.6,   # Heavy Wiener filtering
+                "noise_percentile": 8   # Very aggressive noise detection
+            }
+        }
+        
+        self.current_preset = self.presets[noise_reduction_level]
+        print(f"🎯 Using {noise_reduction_level} noise reduction settings")
         
         # Try to load neural network model as enhancement
         self.has_nn_model = False
@@ -67,14 +109,20 @@ class EffectiveAudioDenoiser:
     
     def advanced_spectral_subtraction(self, audio):
         """
-        Advanced spectral subtraction that actually removes noise
+        Enhanced spectral subtraction with adjustable parameters
         """
+        # Get current parameters
+        alpha = self.current_preset["alpha"]
+        beta = self.current_preset["beta"]
+        speech_boost = self.current_preset["speech_boost"]
+        noise_percentile = self.current_preset["noise_percentile"]
+        
         # Compute spectrogram
         stft = librosa.stft(audio, n_fft=self.n_fft, hop_length=self.hop_length, win_length=self.win_length)
         magnitude = np.abs(stft)
         phase = np.angle(stft)
         
-        # Estimate noise spectrum from multiple quiet segments
+        # Enhanced noise estimation with multiple methods
         # Method 1: Use first and last 5% as likely noise periods
         noise_start = int(0.05 * magnitude.shape[1])
         noise_end = int(0.95 * magnitude.shape[1])
@@ -84,9 +132,9 @@ class EffectiveAudioDenoiser:
             magnitude[:, noise_end:]
         ], axis=1)
         
-        # Method 2: Also find quiet segments throughout
+        # Method 2: Find quiet segments throughout using adjustable percentile
         frame_energy = np.mean(magnitude, axis=0)
-        quiet_threshold = np.percentile(frame_energy, 20)  # Bottom 20% energy frames
+        quiet_threshold = np.percentile(frame_energy, noise_percentile)
         quiet_frames = frame_energy < quiet_threshold
         
         if np.sum(quiet_frames) > 10:  # If we have enough quiet frames
@@ -98,27 +146,40 @@ class EffectiveAudioDenoiser:
         # Smooth the noise spectrum
         noise_spectrum = median_filter(noise_spectrum.squeeze(), size=5).reshape(-1, 1)
         
-        # Advanced spectral subtraction parameters
-        alpha = 2.5  # Over-subtraction factor
-        beta = 0.01  # Spectral floor (very low to remove noise)
-        
         # Apply frequency-dependent subtraction
+        freqs = librosa.fft_frequencies(sr=self.sr, n_fft=self.n_fft)
         freq_weights = np.linspace(1.0, 2.0, magnitude.shape[0]).reshape(-1, 1)
-        adjusted_alpha = alpha * freq_weights
+        
+        # More aggressive in non-speech frequencies
+        speech_mask = (freqs >= 300) & (freqs <= 3400)
+        non_speech_mask = ~speech_mask
+        
+        freq_weights[speech_mask] = alpha * 0.8  # Gentler in speech range
+        freq_weights[non_speech_mask] = alpha * 1.2  # More aggressive elsewhere
+        
+        adjusted_alpha = freq_weights
         
         # Perform subtraction
         subtracted_magnitude = magnitude - adjusted_alpha * noise_spectrum
         
-        # Apply spectral floor
-        enhanced_magnitude = np.maximum(subtracted_magnitude, beta * magnitude)
+        # Dynamic spectral floor based on local SNR
+        local_snr = magnitude / (noise_spectrum + 1e-10)
+        dynamic_beta = beta * (1.0 / (1.0 + local_snr * 0.1))  # Lower floor for high SNR regions
         
-        # Additional enhancement: boost speech-like frequencies (300-3400 Hz)
-        freqs = librosa.fft_frequencies(sr=self.sr, n_fft=self.n_fft)
-        speech_mask = (freqs >= 300) & (freqs <= 3400)
-        speech_boost = np.ones_like(enhanced_magnitude)
-        speech_boost[speech_mask, :] *= 1.2  # Boost speech frequencies
+        enhanced_magnitude = np.maximum(subtracted_magnitude, dynamic_beta * magnitude)
         
-        enhanced_magnitude *= speech_boost
+        # Enhanced speech frequency boosting
+        speech_enhancement_mask = np.ones_like(enhanced_magnitude)
+        speech_enhancement_mask[speech_mask, :] *= speech_boost
+        enhanced_magnitude *= speech_enhancement_mask
+        
+        # Additional post-processing: median filtering to remove impulsive noise
+        if alpha > 3.0:  # Only for aggressive modes
+            for freq_bin in range(0, enhanced_magnitude.shape[0], 50):  # Sample every 50th bin for efficiency
+                end_bin = min(freq_bin + 50, enhanced_magnitude.shape[0])
+                enhanced_magnitude[freq_bin:end_bin, :] = signal.medfilt2d(
+                    enhanced_magnitude[freq_bin:end_bin, :], kernel_size=[1, 3]
+                )
         
         # Reconstruct audio
         enhanced_stft = enhanced_magnitude * np.exp(1j * phase)
@@ -128,17 +189,20 @@ class EffectiveAudioDenoiser:
     
     def wiener_filter_denoising(self, audio):
         """
-        Apply Wiener filtering for noise reduction
+        Enhanced Wiener filtering with adjustable parameters
         """
+        wiener_weight = self.current_preset["wiener_weight"]
+        noise_percentile = self.current_preset["noise_percentile"]
+        
         # Compute power spectral density
         stft = librosa.stft(audio, n_fft=self.n_fft, hop_length=self.hop_length)
         magnitude = np.abs(stft)
         phase = np.angle(stft)
         power = magnitude ** 2
         
-        # Estimate noise power from quiet segments
+        # Enhanced noise power estimation
         frame_energy = np.mean(power, axis=0)
-        noise_threshold = np.percentile(frame_energy, 15)
+        noise_threshold = np.percentile(frame_energy, noise_percentile)
         noise_frames = frame_energy < noise_threshold
         
         if np.sum(noise_frames) > 5:
@@ -146,11 +210,15 @@ class EffectiveAudioDenoiser:
         else:
             noise_power = np.mean(power[:, :int(0.1 * power.shape[1])], axis=1, keepdims=True)
         
-        # Wiener filter
+        # Wiener filter with enhanced gain calculation
         signal_power = power - noise_power
         signal_power = np.maximum(signal_power, 0.1 * power)  # Prevent negative values
         
         wiener_gain = signal_power / (signal_power + noise_power + 1e-10)
+        
+        # Apply gain smoothing for aggressive modes to reduce musical noise
+        if self.current_preset["alpha"] > 3.0:
+            wiener_gain = self._smooth_gain(wiener_gain)
         
         # Apply filter
         filtered_magnitude = magnitude * wiener_gain
@@ -161,9 +229,19 @@ class EffectiveAudioDenoiser:
         
         return filtered_audio
     
+    def _smooth_gain(self, gain, smoothing_factor=0.7):
+        """Smooth gain to reduce musical noise artifacts"""
+        if not hasattr(self, 'previous_gain'):
+            self.previous_gain = gain
+        
+        smoothed_gain = smoothing_factor * self.previous_gain + (1 - smoothing_factor) * gain
+        self.previous_gain = smoothed_gain
+        
+        return smoothed_gain
+    
     def adaptive_noise_reduction(self, audio):
         """
-        Adaptive noise reduction that adjusts based on audio characteristics
+        Enhanced adaptive noise reduction with multi-stage processing for aggressive modes
         """
         # Analyze audio characteristics
         rms_energy = np.sqrt(np.mean(audio ** 2))
@@ -172,13 +250,19 @@ class EffectiveAudioDenoiser:
         
         print(f"📊 Audio analysis - RMS: {rms_energy:.4f}, ZCR: {zero_crossing_rate:.4f}, SC: {spectral_centroid:.1f} Hz")
         
+        # Check if we're in aggressive mode
+        is_aggressive = self.current_preset["alpha"] >= 3.5
+        
         # Choose denoising strategy based on characteristics
         if rms_energy > 0.05 and spectral_centroid > 1000:
-            # High energy speech - use gentle denoising
-            print("🎯 Detected: High energy speech - applying gentle denoising")
-            denoised = self.advanced_spectral_subtraction(audio)
-            # Apply light additional filtering
-            denoised = self._apply_light_filtering(denoised)
+            # High energy speech
+            if is_aggressive:
+                print("🎯 Detected: High energy speech - applying aggressive multi-stage denoising")
+                denoised = self._multi_stage_denoising(audio)
+            else:
+                print("🎯 Detected: High energy speech - applying gentle denoising")
+                denoised = self.advanced_spectral_subtraction(audio)
+                denoised = self._apply_light_filtering(denoised)
         
         elif rms_energy < 0.02:
             # Very quiet audio - boost and denoise carefully
@@ -186,17 +270,60 @@ class EffectiveAudioDenoiser:
             # First boost the audio
             boosted_audio = audio * (0.05 / (rms_energy + 1e-8))
             boosted_audio = np.clip(boosted_audio, -0.95, 0.95)
-            denoised = self.wiener_filter_denoising(boosted_audio)
+            
+            if is_aggressive:
+                denoised = self._multi_stage_denoising(boosted_audio)
+            else:
+                denoised = self.wiener_filter_denoising(boosted_audio)
             
         else:
-            # Normal audio - use combined approach
-            print("🎯 Detected: Normal audio - applying combined denoising")
-            # Apply both methods and blend
-            spec_sub = self.advanced_spectral_subtraction(audio)
-            wiener = self.wiener_filter_denoising(audio)
-            denoised = 0.7 * spec_sub + 0.3 * wiener
+            # Normal audio
+            if is_aggressive:
+                print("🎯 Detected: Normal audio - applying aggressive combined denoising")
+                denoised = self._multi_stage_denoising(audio)
+            else:
+                print("🎯 Detected: Normal audio - applying combined denoising")
+                # Apply both methods and blend
+                spec_sub = self.advanced_spectral_subtraction(audio)
+                wiener = self.wiener_filter_denoising(audio)
+                denoised = 0.7 * spec_sub + 0.3 * wiener
         
         return denoised
+    
+    def _multi_stage_denoising(self, audio):
+        """Apply multi-stage denoising for aggressive modes"""
+        wiener_weight = self.current_preset["wiener_weight"]
+        
+        # Stage 1: Advanced spectral subtraction
+        stage1_audio = self.advanced_spectral_subtraction(audio)
+        
+        # Quality check after stage 1
+        stage1_rms = np.sqrt(np.mean(stage1_audio ** 2))
+        original_rms = np.sqrt(np.mean(audio ** 2))
+        
+        if stage1_rms < 0.05 * original_rms:
+            print("⚠️ Stage 1 too aggressive, reducing parameters for stage 2")
+            # Temporarily reduce aggressiveness for stage 2
+            original_alpha = self.current_preset["alpha"]
+            original_beta = self.current_preset["beta"]
+            self.current_preset["alpha"] *= 0.7
+            self.current_preset["beta"] *= 2.0
+        
+        # Stage 2: Enhanced Wiener filtering
+        stage2_audio = self.wiener_filter_denoising(stage1_audio)
+        
+        # Restore original parameters if they were modified
+        if stage1_rms < 0.05 * original_rms:
+            self.current_preset["alpha"] = original_alpha
+            self.current_preset["beta"] = original_beta
+        
+        # Stage 3: Blend results with weighting
+        final_audio = (1 - wiener_weight) * stage1_audio + wiener_weight * stage2_audio
+        
+        # Stage 4: Final light filtering
+        final_audio = self._apply_light_filtering(final_audio)
+        
+        return final_audio
     
     def _apply_light_filtering(self, audio):
         """Apply light filtering to remove remaining artifacts"""
@@ -281,7 +408,6 @@ class EffectiveAudioDenoiser:
         # For now, return the input since the NN model isn't effectively trained
         return audio
 
-
 class SimpleDenoiseNet(nn.Module):
     """Simple network for audio enhancement"""
     def __init__(self):
@@ -299,11 +425,12 @@ class SimpleDenoiseNet(nn.Module):
         x = self.conv4(x)
         return x
 
-
 def main():
-    """Main function with effective denoising"""
-    print("🚀 EFFECTIVE AUDIO NOISE REDUCTION SYSTEM")
-    print("=" * 55)
+    """Enhanced main function with noise reduction level options"""
+    import sys
+    
+    print("🚀 ENHANCED AUDIO NOISE REDUCTION SYSTEM")
+    print("=" * 60)
     
     # Define paths
     base_dir = Path(__file__).parent.parent
@@ -318,21 +445,45 @@ def main():
     print(f"📁 Input: {input_dir}")
     print(f"📁 Output: {output_dir}")
     
-    # Initialize effective denoiser
-    denoiser = EffectiveAudioDenoiser(model_path)
+    # Parse command line arguments
+    reduction_level = "normal"  # Default
+    filename = None
     
-    # Process files
-    wav_files = list(input_dir.glob('*.wav'))
+    if len(sys.argv) > 1:
+        filename = sys.argv[1]
+        if not filename.endswith('.wav'):
+            filename += '.wav'
+        
+        # Check for noise reduction level argument
+        if len(sys.argv) > 2 and sys.argv[2] in ["gentle", "normal", "moderate", "aggressive", "maximum"]:
+            reduction_level = sys.argv[2]
+    
+    # Initialize denoiser with specified level
+    denoiser = EffectiveAudioDenoiser(model_path, reduction_level)
+    
+    # Get files to process
+    if filename:
+        wav_files = [input_dir / filename]
+        if not wav_files[0].exists():
+            print(f"❌ File not found: {wav_files[0]}")
+            print(f"Available files:")
+            for f in input_dir.glob('*.wav'):
+                print(f"   - {f.name}")
+            return
+        print(f"🎯 Processing specific file: {filename}")
+    else:
+        wav_files = list(input_dir.glob('*.wav'))
+        print(f"🔄 Processing all files in directory")
     
     if not wav_files:
         print(f"⚠️ No WAV files found in {input_dir}")
         return
     
-    print(f"\n🔄 Processing {len(wav_files)} files...")
+    print(f"\n🔄 Processing {len(wav_files)} files with {reduction_level} noise reduction...")
     success_count = 0
     
     for wav_file in wav_files:
-        output_file = output_dir / f"denoised_{wav_file.name}"
+        output_file = output_dir / f"{reduction_level}_{wav_file.name}"
         print(f"\n📄 Processing: {wav_file.name}")
         
         if denoiser.denoise_audio_file(wav_file, output_file):
@@ -342,11 +493,17 @@ def main():
     
     if success_count > 0:
         print(f"\n🎵 Test your results:")
-        print(f"   1. Listen to denoised_*.wav files in {output_dir}")
+        print(f"   1. Listen to {reduction_level}_*.wav files in {output_dir}")
         print(f"   2. Compare with original files")
         print(f"   3. You should hear significant background noise reduction")
         print(f"   4. Speech should be clearer and more prominent")
-
+        
+        # Usage examples
+        print(f"\n💡 Usage examples:")
+        print(f"   Normal mode:     python audio_denoiser.py input3")
+        print(f"   Moderate mode:   python audio_denoiser.py input3 moderate")
+        print(f"   Aggressive mode: python audio_denoiser.py input3 aggressive")
+        print(f"   Maximum mode:    python audio_denoiser.py input3 maximum")
 
 if __name__ == "__main__":
     main()

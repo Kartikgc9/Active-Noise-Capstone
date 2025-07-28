@@ -1,0 +1,47 @@
+# Audio files
+audio_files/**/*.wav
+**/test_audio/*.wav
+
+# Spectrograms (numpy files)
+spectrograms/**/*.npy
+
+# Model checkpoints
+checkpoints/*.pth
+*.pth
+
+# Python virtual environment
+scripts/noise/
+**/venv/
+**/env/
+
+# Python cache files
+**/__pycache__/
+*.py[cod]
+*$py.class
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# VS Code settings
+.vscode/
+
+# Local development settings
+*.env
+.env.local
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+
+# Large CSV files (if they get too big)
+# Uncomment if needed
+# metadata/*.csv
+# processed/metadata/*.csv

@@ -1,0 +1,5 @@
+clean_file,noisy_file
+spectrograms/clean/p226_051.npy,spectrograms/noisy/p226_051.npy
+spectrograms/clean/p226_037.npy,spectrograms/noisy/p226_037.npy
+spectrograms/clean/p226_047.npy,spectrograms/noisy/p226_047.npy
+spectrograms/clean/p226_039.npy,spectrograms/noisy/p226_039.npy

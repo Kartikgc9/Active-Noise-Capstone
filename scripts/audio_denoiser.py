@@ -1,11 +1,3 @@
-"""
-Enhanced Effective Audio Denoiser - Multiple Noise Reduction Levels
-==================================================================
-
-This version implements proven noise reduction techniques with adjustable
-aggressiveness levels for stronger background noise removal.
-"""
-
 import torch
 import torch.nn as nn
 import numpy as np

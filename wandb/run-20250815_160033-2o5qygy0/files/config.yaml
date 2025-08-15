@@ -1,0 +1,77 @@
+_wandb:
+    value:
+        cli_version: 0.21.1
+        e:
+            pyrkdcyxxm5zb2suy6qmikq9suqfyuj2:
+                codePath: scripts\train.py
+                codePathLocal: scripts\train.py
+                cpu_count: 4
+                cpu_count_logical: 8
+                disk:
+                    /:
+                        total: "1000187359232"
+                        used: "325053554688"
+                email: kartikawadh2004yadav@gmail.com
+                executable: D:\Capstone\.venv\Scripts\python.exe
+                git:
+                    commit: 8daab0b46671739d637d1091b368e98a0b9bf718
+                    remote: https://github.com/Kartikgc9/Active-Noise-Capstone.git
+                host: kartik-laptop
+                memory:
+                    total: "8355045376"
+                os: Windows-10-10.0.26100-SP0
+                program: D:\Capstone\scripts\train.py
+                python: CPython 3.10.9
+                root: D:\Capstone
+                startedAt: "2025-08-15T10:30:33.404116Z"
+                writerId: pyrkdcyxxm5zb2suy6qmikq9suqfyuj2
+        m: []
+        python_version: 3.10.9
+        t:
+            "1":
+                - 1
+            "2":
+                - 1
+            "3":
+                - 2
+                - 13
+                - 16
+            "4": 3.10.9
+            "5": 0.21.1
+            "8":
+                - 3
+            "12": 0.21.1
+            "13": windows-amd64
+audio:
+    value:
+        hop_length: 512
+        n_fft: 2048
+        sample_rate: 44100
+        segment_length: 44100
+logging:
+    value:
+        plot_interval: 5
+        project_name: audio-denoising
+        run_name: advanced-denoiser-v1
+        use_wandb: true
+model:
+    value:
+        attention_layers: true
+        initial_channels: 16
+        layers_per_block: 2
+paths:
+    value:
+        checkpoint_dir: checkpoints
+        data_dir: audio_files/input
+        metadata_dir: metadata
+        plots_dir: visualizations/training
+training:
+    value:
+        batch_size: 1
+        epochs: 50
+        learning_rate: 0.001
+        loss_alpha: 0.84
+        loss_beta: 0.16
+        num_workers: 2
+        stft_window: 2048
+        weight_decay: 1e-05

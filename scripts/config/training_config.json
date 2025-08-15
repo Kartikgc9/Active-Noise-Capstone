@@ -1,0 +1,35 @@
+{
+    "paths": {
+        "data_dir": "audio_files/input",
+        "metadata_dir": "metadata",
+        "checkpoint_dir": "checkpoints",
+        "plots_dir": "visualizations/training"
+    },
+    "audio": {
+        "sample_rate": 44100,
+        "segment_length": 44100,
+        "n_fft": 2048,
+        "hop_length": 512
+    },
+    "model": {
+        "initial_channels": 16,
+        "layers_per_block": 2,
+        "attention_layers": true
+    },
+    "training": {
+        "epochs": 50,
+        "batch_size": 1,
+        "num_workers": 2,
+        "learning_rate": 0.001,
+        "weight_decay": 1e-5,
+        "loss_alpha": 0.84,
+        "loss_beta": 0.16,
+        "stft_window": 2048
+    },
+    "logging": {
+        "use_wandb": true,
+        "project_name": "audio-denoising",
+        "run_name": "advanced-denoiser-v1",
+        "plot_interval": 5
+    }
+}

@@ -1,0 +1,28 @@
+{
+  "os":  "Windows-10-10.0.26100-SP0",
+  "python":  "CPython 3.10.9",
+  "startedAt":  "2025-08-15T10:24:59.692411Z",
+  "program":  "D:\\Capstone\\scripts\\train.py",
+  "codePath":  "scripts\\train.py",
+  "codePathLocal":  "scripts\\train.py",
+  "git":  {
+    "remote":  "https://github.com/Kartikgc9/Active-Noise-Capstone.git",
+    "commit":  "8daab0b46671739d637d1091b368e98a0b9bf718"
+  },
+  "email":  "kartikawadh2004yadav@gmail.com",
+  "root":  "D:\\Capstone",
+  "host":  "kartik-laptop",
+  "executable":  "D:\\Capstone\\.venv\\Scripts\\python.exe",
+  "cpu_count":  4,
+  "cpu_count_logical":  8,
+  "disk":  {
+    "/":  {
+      "total":  "1000187359232",
+      "used":  "325051215872"
+    }
+  },
+  "memory":  {
+    "total":  "8355045376"
+  },
+  "writerId":  "3h27nqcaj017x5clza79oe0qdenyrxu3"
+}

@@ -1,0 +1,28 @@
+# Audio Processing
+librosa==0.10.1
+soundfile==0.12.1
+sounddevice==0.4.6
+PyAudio==0.2.14
+
+# Deep Learning (optional - for neural network enhancement)
+torch>=2.0.0
+torchaudio>=2.0.0
+
+# Scientific Computing
+numpy>=1.24.0
+scipy>=1.10.0
+
+# Progress and Utilities
+tqdm>=4.65.0
+
+# Experiment Tracking (optional)
+wandb>=0.15.0
+
+# Data Processing
+pandas>=2.0.0
+
+# Visualization (optional)
+matplotlib>=3.7.0
+
+# Additional Dependencies
+audioread>=3.0.0

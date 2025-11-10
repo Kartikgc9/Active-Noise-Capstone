@@ -43,12 +43,43 @@ python -m venv noise
 
 3. Install required packages:
 ```bash
-pip install torch numpy librosa soundfile scipy
+pip install -r requirements.txt
+
+# OR install core dependencies only:
+pip install torch numpy librosa soundfile scipy sounddevice
 ```
 
 ## Usage
 
-### Basic Usage
+### Real-Time Audio Denoising (NEW!)
+Automatically capture audio from your microphone, denoise it in real-time, and play it back through your speakers:
+
+```bash
+python scripts/realtime_denoiser.py [noise_reduction_level]
+```
+
+Examples:
+```bash
+python scripts/realtime_denoiser.py                # Normal mode
+python scripts/realtime_denoiser.py gentle         # Gentle mode
+python scripts/realtime_denoiser.py aggressive     # Aggressive mode
+```
+
+**Features:**
+- Continuous real-time processing with minimal latency (~46-92ms)
+- Automatic audio capture from microphone
+- Immediate playback of denoised audio
+- Live noise reduction with adjustable intensity
+- Press Ctrl+C to stop
+
+**Requirements:**
+- Working microphone and speakers/headphones
+- Low CPU usage mode for continuous operation
+- Supports all five noise reduction levels
+
+---
+
+### File-Based Processing
 Place your WAV files in the `audio_files/input` directory and run:
 ```bash
 python scripts/audio_denoiser.py input_filename

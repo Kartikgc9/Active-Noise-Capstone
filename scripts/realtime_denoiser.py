@@ -24,6 +24,13 @@ import queue
 import threading
 import time
 import warnings
+import sys
+
+# Fix Unicode encoding for Windows console
+if sys.platform == 'win32':
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 warnings.filterwarnings("ignore")
 
@@ -51,42 +58,47 @@ class RealtimeAudioDenoiser:
         self.win_length = 2048
         self.latency = latency
 
-        # Define noise reduction presets (same as audio_denoiser.py)
+        # Define noise reduction presets (more aggressive for real-time use)
         self.presets = {
             "gentle": {
-                "alpha": 2.0,
-                "beta": 0.05,
-                "speech_boost": 1.1,
-                "wiener_weight": 0.3,
-                "noise_percentile": 20
+                "alpha": 2.5,
+                "beta": 0.02,
+                "speech_boost": 1.2,
+                "wiener_weight": 0.4,
+                "noise_percentile": 20,
+                "low_freq_boost": 1.3  # Extra reduction for low-freq noise (fans)
             },
             "normal": {
-                "alpha": 2.5,
-                "beta": 0.01,
-                "speech_boost": 1.2,
-                "wiener_weight": 0.3,
-                "noise_percentile": 20
-            },
-            "moderate": {
-                "alpha": 3.0,
+                "alpha": 3.5,
                 "beta": 0.008,
                 "speech_boost": 1.3,
-                "wiener_weight": 0.4,
-                "noise_percentile": 15
+                "wiener_weight": 0.5,
+                "noise_percentile": 15,
+                "low_freq_boost": 1.5
             },
-            "aggressive": {
-                "alpha": 3.5,
+            "moderate": {
+                "alpha": 4.5,
                 "beta": 0.005,
                 "speech_boost": 1.4,
-                "wiener_weight": 0.5,
-                "noise_percentile": 10
+                "wiener_weight": 0.6,
+                "noise_percentile": 12,
+                "low_freq_boost": 1.7
             },
-            "maximum": {
-                "alpha": 4.0,
+            "aggressive": {
+                "alpha": 5.5,
                 "beta": 0.003,
                 "speech_boost": 1.5,
-                "wiener_weight": 0.6,
-                "noise_percentile": 8
+                "wiener_weight": 0.7,
+                "noise_percentile": 8,
+                "low_freq_boost": 2.0
+            },
+            "maximum": {
+                "alpha": 6.5,
+                "beta": 0.001,
+                "speech_boost": 1.6,
+                "wiener_weight": 0.8,
+                "noise_percentile": 5,
+                "low_freq_boost": 2.5
             }
         }
 
@@ -98,6 +110,12 @@ class RealtimeAudioDenoiser:
         self.noise_profile = None
         self.previous_gain = None
         self.frame_count = 0
+
+        # Noise profiling phase
+        self.noise_calibration_chunks = []
+        self.calibration_duration = 3.0  # seconds
+        self.calibration_complete = False
+        self.required_calibration_chunks = int(self.calibration_duration * self.sr / self.block_size)
 
         # Threading components
         self.input_queue = queue.Queue(maxsize=10)
@@ -129,6 +147,19 @@ class RealtimeAudioDenoiser:
         if len(audio_chunk) < self.block_size:
             audio_chunk = np.pad(audio_chunk, (0, self.block_size - len(audio_chunk)))
 
+        # Noise profiling phase - collect background noise samples
+        if not self.calibration_complete:
+            self.noise_calibration_chunks.append(audio_chunk.copy())
+
+            if len(self.noise_calibration_chunks) >= self.required_calibration_chunks:
+                # Build noise profile from calibration data
+                self._build_noise_profile_from_calibration()
+                self.calibration_complete = True
+                print("✅ Noise profiling complete - starting denoising")
+
+            # During calibration, pass through audio unchanged
+            return audio_chunk
+
         # Add to buffer for context
         self.audio_buffer = np.concatenate([self.audio_buffer[len(audio_chunk):], audio_chunk])
 
@@ -143,8 +174,17 @@ class RealtimeAudioDenoiser:
             return audio_chunk
 
         try:
-            # Apply spectral subtraction (optimized for real-time)
-            denoised = self._fast_spectral_subtraction(processing_audio)
+            # Apply combined denoising (spectral subtraction + Wiener filtering)
+            wiener_weight = self.current_preset["wiener_weight"]
+
+            # Apply spectral subtraction
+            spec_sub = self._fast_spectral_subtraction(processing_audio)
+
+            # Apply Wiener filtering
+            wiener = self._wiener_filter(processing_audio)
+
+            # Blend both methods for better results
+            denoised = (1 - wiener_weight) * spec_sub + wiener_weight * wiener
 
             # Extract the current chunk from the processed audio
             denoised_chunk = denoised[-self.block_size:]
@@ -163,6 +203,72 @@ class RealtimeAudioDenoiser:
             print(f"⚠️ Processing error: {e}")
             return audio_chunk
 
+    def _build_noise_profile_from_calibration(self):
+        """
+        Build accurate noise profile from calibration chunks
+        """
+        print("🔍 Building noise profile from background noise sample...")
+
+        # Concatenate all calibration chunks
+        calibration_audio = np.concatenate(self.noise_calibration_chunks)
+
+        # Compute STFT of calibration audio
+        stft = librosa.stft(calibration_audio, n_fft=self.n_fft,
+                           hop_length=self.hop_length, win_length=self.win_length)
+        magnitude = np.abs(stft)
+
+        # Take the average magnitude across all frames as noise profile
+        # This gives us a very accurate estimate since it's pure background noise
+        self.noise_profile = np.mean(magnitude, axis=1, keepdims=True)
+
+        print(f"   📊 Captured {len(self.noise_calibration_chunks)} chunks ({self.calibration_duration}s)")
+        print(f"   📊 Noise profile shape: {self.noise_profile.shape}")
+        print(f"   📊 Average noise magnitude: {np.mean(self.noise_profile):.6f}")
+
+    def _wiener_filter(self, audio):
+        """
+        Wiener filtering for noise reduction
+        """
+        wiener_weight = self.current_preset["wiener_weight"]
+        noise_percentile = self.current_preset["noise_percentile"]
+
+        # Compute STFT
+        stft = librosa.stft(audio, n_fft=self.n_fft, hop_length=self.hop_length,
+                           win_length=self.win_length)
+        magnitude = np.abs(stft)
+        phase = np.angle(stft)
+        power = magnitude ** 2
+
+        # Estimate noise power from quietest frames
+        frame_energy = np.mean(power, axis=0)
+        noise_threshold = np.percentile(frame_energy, noise_percentile)
+        noise_frames = frame_energy < noise_threshold
+
+        if np.sum(noise_frames) > 2:
+            noise_power = np.mean(power[:, noise_frames], axis=1, keepdims=True)
+        else:
+            # Use minimum statistics if no quiet frames found
+            noise_power = np.percentile(power, 5, axis=1, keepdims=True)
+
+        # Wiener filter gain
+        signal_power = np.maximum(power - noise_power, 0.01 * power)
+        wiener_gain = signal_power / (signal_power + noise_power + 1e-10)
+
+        # Apply gain smoothing to reduce musical noise
+        if self.previous_gain is not None:
+            wiener_gain = 0.7 * self.previous_gain + 0.3 * wiener_gain
+        self.previous_gain = wiener_gain.copy()
+
+        # Apply filter
+        filtered_magnitude = magnitude * wiener_gain
+
+        # Reconstruct
+        filtered_stft = filtered_magnitude * np.exp(1j * phase)
+        filtered_audio = librosa.istft(filtered_stft, hop_length=self.hop_length,
+                                      win_length=self.win_length, length=len(audio))
+
+        return filtered_audio
+
     def _fast_spectral_subtraction(self, audio):
         """
         Fast spectral subtraction optimized for real-time processing
@@ -178,28 +284,42 @@ class RealtimeAudioDenoiser:
         magnitude = np.abs(stft)
         phase = np.angle(stft)
 
-        # Update noise profile adaptively
-        if self.noise_profile is None or self.frame_count % 50 == 0:
-            # Initial or periodic noise profile update
-            frame_energy = np.mean(magnitude, axis=0)
-            quiet_threshold = np.percentile(frame_energy, noise_percentile)
-            quiet_frames = frame_energy < quiet_threshold
+        # Improved adaptive noise profile estimation
+        frame_energy = np.mean(magnitude, axis=0)
 
+        # Identify quiet/noise-only frames using energy-based detection
+        mean_energy = np.mean(frame_energy)
+        std_energy = np.std(frame_energy)
+        quiet_threshold = mean_energy - 0.5 * std_energy  # Frames below this are likely noise-only
+        quiet_frames = frame_energy < quiet_threshold
+
+        # Initialize or update noise profile
+        if self.noise_profile is None:
+            # Initial estimation using minimum statistics
             if np.sum(quiet_frames) > 2:
                 quiet_spectrum = magnitude[:, quiet_frames]
                 self.noise_profile = np.mean(quiet_spectrum, axis=1, keepdims=True)
             else:
-                self.noise_profile = np.percentile(magnitude, noise_percentile, axis=1, keepdims=True)
+                # Use percentile-based estimation as fallback
+                self.noise_profile = np.percentile(magnitude, 5, axis=1, keepdims=True)
+        else:
+            # Continuous adaptive update using smoothing
+            if np.sum(quiet_frames) > 1:
+                current_noise = np.mean(magnitude[:, quiet_frames], axis=1, keepdims=True)
+                # Smooth update: blend old and new estimates
+                self.noise_profile = 0.9 * self.noise_profile + 0.1 * current_noise
 
         self.frame_count += 1
 
         # Frequency-dependent subtraction
         freqs = librosa.fft_frequencies(sr=self.sr, n_fft=self.n_fft)
         speech_mask = (freqs >= 300) & (freqs <= 3400)
+        low_freq_mask = (freqs >= 20) & (freqs <= 500)  # Fan/hum noise range
 
         freq_weights = np.ones((magnitude.shape[0], 1)) * alpha
         freq_weights[speech_mask] *= 0.8  # Gentler in speech range
-        freq_weights[~speech_mask] *= 1.2  # More aggressive elsewhere
+        freq_weights[low_freq_mask] *= self.current_preset["low_freq_boost"]  # Extra aggressive for fans/hum
+        freq_weights[~speech_mask & ~low_freq_mask] *= 1.2  # More aggressive elsewhere
 
         # Spectral subtraction
         subtracted_magnitude = magnitude - freq_weights * self.noise_profile
@@ -379,6 +499,15 @@ def main():
             block_size=2048,  # ~46ms latency per block
             latency='low'
         )
+
+        print("\n" + "=" * 60)
+        print("🔇 NOISE PROFILING PHASE")
+        print("=" * 60)
+        print(f"⚠️  Please stay QUIET for {denoiser.calibration_duration} seconds...")
+        print("   (The system needs to capture background noise only)")
+        print("   - Fan noise, AC, birds, etc. is OK")
+        print("   - Do NOT speak or make sounds")
+        print("=" * 60)
 
         denoiser.start()
 

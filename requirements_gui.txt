@@ -1,0 +1,22 @@
+# Requirements for Advanced ANC System GUI Application
+# Install with: pip install -r requirements_gui.txt
+
+# Core audio processing
+numpy>=1.24.0
+scipy>=1.10.0
+librosa==0.10.1
+soundfile==0.12.1
+sounddevice==0.4.6
+
+# GUI framework
+PyQt5>=5.15.9
+
+# Audio quality metrics (optional but recommended)
+pesq
+pystoi
+
+# For building executable
+pyinstaller>=5.10.0
+
+# Existing project requirements
+-r requirements.txt

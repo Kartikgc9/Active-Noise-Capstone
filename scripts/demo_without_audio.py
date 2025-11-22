@@ -69,9 +69,9 @@ if FULL_DEMO:
     is_voice_noise, conf_noise = simple_vad(noise)
     is_voice_silence, conf_silence = simple_vad(silence)
 
-    print(f"  Speech:  Voice={is_voice_speech:5s}  Confidence={conf_speech:.3f}")
-    print(f"  Noise:   Voice={is_voice_noise:5s}  Confidence={conf_noise:.3f}")
-    print(f"  Silence: Voice={is_voice_silence:5s}  Confidence={conf_silence:.3f}")
+    print(f"  Speech:  Voice={str(is_voice_speech):5s}  Confidence={conf_speech:.3f}")
+    print(f"  Noise:   Voice={str(is_voice_noise):5s}  Confidence={conf_noise:.3f}")
+    print(f"  Silence: Voice={str(is_voice_silence):5s}  Confidence={conf_silence:.3f}")
 
     if is_voice_speech and not is_voice_silence:
         print("  ✅ VAD working correctly!")
